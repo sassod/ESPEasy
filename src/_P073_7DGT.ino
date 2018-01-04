@@ -23,7 +23,7 @@
 
 #define PLUGIN_073
 #define PLUGIN_ID_073        73
-#define PLUGIN_NAME_073      "LED - 7-segment display [TESTING]"
+#define PLUGIN_NAME_073      "Display - 7-segment display [TESTING]"
 #define PLUGIN_073_DEBUG     true    //activate extra log info in the debug
 
 //---------------------------------------------------
@@ -89,7 +89,6 @@ boolean Plugin_073(byte function, struct EventStruct *event, String& string)
       {
         addFormNote(string, F("TM1637:  1st=CLK-Pin, 2nd=DIO-Pin"));
         addFormNote(string, F("MAX7219: 1st=DIN-Pin, 2nd=CLK-Pin, 3rd=CS-Pin"));
-        addFormNote(string, F("74HC595: 1st=DIO-Pin, 2nd=RCLK-Pin, 3rd=SCLK-Pin"));
         String displtype[3] = { F("TM1637 - 4 digit"), F("MAX7219 - 8 digit")};
         addFormSelector(string, F("Display Type"), F("plugin_073_displtype"), 2, displtype, NULL, Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
         String displout[4] = { F("Manual"), F("Clock - Blink"), F("Clock - No Blink"), F("Date")  };

@@ -1225,6 +1225,7 @@ void addLog(byte loglevel, const char *line)
 
   }
 
+#ifdef FEATURE_SD
   if (loglevel <= Settings.SDLogLevel)
   {
     File logFile = SD.open("log.dat", FILE_WRITE);
@@ -1232,6 +1233,7 @@ void addLog(byte loglevel, const char *line)
       logFile.println(line);
     logFile.close();
   }
+#endif
 }
 
 
@@ -1253,7 +1255,7 @@ void delayedReboot(int rebootDelay)
    #endif
    #if defined(ESP32)
      ESP.restart();
-   #endif  
+   #endif
 }
 
 
@@ -1647,6 +1649,7 @@ String parseTemplate(String &tmpString, byte lineSize)
   {
     byte count = 0;
     byte currentTaskIndex = ExtraTaskSettings.TaskIndex;
+
     while (leftBracketIndex >= 0 && count < 10 - 1)
     {
       newString += tmpString.substring(0, leftBracketIndex);
@@ -1668,42 +1671,45 @@ String parseTemplate(String &tmpString, byte lineSize)
         }
         for (byte y = 0; y < TASKS_MAX; y++)
         {
-          LoadTaskSettings(y);
-          if (ExtraTaskSettings.TaskDeviceName[0] != 0)
+          if (Settings.TaskDeviceEnabled[y])
           {
-            if (deviceName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceName))
+            LoadTaskSettings(y);
+            if (ExtraTaskSettings.TaskDeviceName[0] != 0)
             {
-              boolean match = false;
-              for (byte z = 0; z < VARS_PER_TASK; z++)
-                if (valueName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceValueNames[z]))
-                {
-                  // here we know the task and value, so find the uservar
-                  match = true;
-                  String value = "";
-                  byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[y]);
-                  if (Device[DeviceIndex].VType == SENSOR_TYPE_LONG)
-                    value = (unsigned long)UserVar[y * VARS_PER_TASK + z] + ((unsigned long)UserVar[y * VARS_PER_TASK + z + 1] << 16);
-                  else
-                    value = toString(UserVar[y * VARS_PER_TASK + z], ExtraTaskSettings.TaskDeviceValueDecimals[z]);
-
-                  if (valueFormat == "R")
-                  {
-                    int filler = lineSize - newString.length() - value.length() - tmpString.length() ;
-                    for (byte f = 0; f < filler; f++)
-                      newString += " ";
-                  }
-                  newString += String(value);
-                  break;
-                }
-              if (!match) // try if this is a get config request
+              if (deviceName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceName))
               {
-                struct EventStruct TempEvent;
-                TempEvent.TaskIndex = y;
-                String tmpName = valueName;
-                if (PluginCall(PLUGIN_GET_CONFIG, &TempEvent, tmpName))
-                  newString += tmpName;
+                boolean match = false;
+                for (byte z = 0; z < VARS_PER_TASK; z++)
+                  if (valueName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceValueNames[z]))
+                  {
+                    // here we know the task and value, so find the uservar
+                    match = true;
+                    String value = "";
+                    byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[y]);
+                    if (Device[DeviceIndex].VType == SENSOR_TYPE_LONG)
+                      value = (unsigned long)UserVar[y * VARS_PER_TASK + z] + ((unsigned long)UserVar[y * VARS_PER_TASK + z + 1] << 16);
+                    else
+                      value = toString(UserVar[y * VARS_PER_TASK + z], ExtraTaskSettings.TaskDeviceValueDecimals[z]);
+
+                    if (valueFormat == "R")
+                    {
+                      int filler = lineSize - newString.length() - value.length() - tmpString.length() ;
+                      for (byte f = 0; f < filler; f++)
+                        newString += " ";
+                    }
+                    newString += String(value);
+                    break;
+                  }
+                if (!match) // try if this is a get config request
+                {
+                  struct EventStruct TempEvent;
+                  TempEvent.TaskIndex = y;
+                  String tmpName = valueName;
+                  if (PluginCall(PLUGIN_GET_CONFIG, &TempEvent, tmpName))
+                    newString += tmpName;
+                }
+                break;
               }
-              break;
             }
           }
         }
@@ -1712,7 +1718,9 @@ String parseTemplate(String &tmpString, byte lineSize)
       count++;
     }
     newString += tmpString;
-    LoadTaskSettings(currentTaskIndex);
+
+    if (currentTaskIndex!=255)
+      LoadTaskSettings(currentTaskIndex);
   }
 
   // replace other system variables like %sysname%, %systime%, %ip%
@@ -1738,7 +1746,10 @@ String parseTemplate(String &tmpString, byte lineSize)
   char strIP[20];
   sprintf_P(strIP, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
   newString.replace(F("%ip%"), strIP);
-
+  newString.replace(F("%ip1%"), String(ip[0]));
+  newString.replace(F("%ip2%"), String(ip[1]));
+  newString.replace(F("%ip3%"), String(ip[2]));
+  newString.replace(F("%ip4%"), String(ip[3]));
   newString.replace("%sysload%", String(100 - (100 * loopCounterLast / loopCounterMax)));
 
   // padding spaces
@@ -2719,11 +2730,13 @@ void SendValueLogger(byte TaskIndex)
 
   addLog(LOG_LEVEL_DEBUG, logger);
 
+#ifdef FEATURE_SD
   String filename = F("VALUES.CSV");
   File logFile = SD.open(filename, FILE_WRITE);
   if (logFile)
     logFile.print(logger);
   logFile.close();
+#endif
 }
 
 
@@ -2756,10 +2769,10 @@ void tone(uint8_t _pin, unsigned int frequency, unsigned long duration) {
 /********************************************************************************************\
   Play RTTTL string on specified pin
   \*********************************************************************************************/
-void play_rtttl(uint8_t _pin, char *p )
+void play_rtttl(uint8_t _pin, const char *p )
 {
   #define OCTAVE_OFFSET 0
-  // Absolutely no error checking in here
+  // FIXME: Absolutely no error checking in here
 
   int notes[] = { 0,
     262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494,
@@ -2943,7 +2956,7 @@ void ArduinoOTAInit()
       #endif
       #if defined(ESP32)
         ESP.restart();
-      #endif      
+      #endif
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
 
@@ -2964,7 +2977,7 @@ void ArduinoOTAInit()
       #endif
       #if defined(ESP32)
         ESP.restart();
-      #endif      
+      #endif
   });
   ArduinoOTA.begin();
 
